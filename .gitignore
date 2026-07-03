@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Training data — too large for GitHub
+training_data/
+
+# Trained models — too large for GitHub
+models/
+
+# Session logs — generated at runtime
+logs/
+
+# OS files
+.DS_Store
+
+# Virtual environment
+venv/
+env/

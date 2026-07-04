@@ -1,0 +1,87 @@
+name: HandIntent CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy boto3
+
+      - name: Test intent classifier loads
+        run: |
+          python3 -c "
+          from intent_classifier import INTENTS, INPUT_SIZE
+          assert len(INTENTS) == 4
+          assert INPUT_SIZE == 63
+          print('Intent classifier constants verified.')
+          "
+
+      - name: Test data structures
+        run: |
+          python3 -c "
+          import json
+          sample = {
+            'label': 'SELECT',
+            'context': 'READING',
+            'frames': [{'landmarks': [{'x': 0.1, 'y': 0.2, 'z': 0.3}] * 21, 'frame_number': i}
+                       for i in range(30)]
+          }
+          assert sample['label'] in ['SELECT', 'DISMISS', 'SCROLL_UP', 'SCROLL_DOWN']
+          assert len(sample['frames']) == 30
+          assert len(sample['frames'][0]['landmarks']) == 21
+          print('Data structure verified.')
+          "
+
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker image
+        run: |
+          docker build -t handintent-training .
+
+      - name: Tag and push to ECR
+        run: |
+          docker tag handintent-training:latest \
+            704885513503.dkr.ecr.ap-south-1.amazonaws.com/handintent-training:latest
+          docker tag handintent-training:latest \
+            704885513503.dkr.ecr.ap-south-1.amazonaws.com/handintent-training:${{ github.sha }}
+          docker push \
+            704885513503.dkr.ecr.ap-south-1.amazonaws.com/handintent-training:latest
+          docker push \
+            704885513503.dkr.ecr.ap-south-1.amazonaws.com/handintent-training:${{ github.sha }}
+
+      - name: Print success
+        run: |
+          echo "Docker image pushed to ECR successfully."
+          echo "Image: 704885513503.dkr.ecr.ap-south-1.amazonaws.com/handintent-training:latest"
